@@ -1,0 +1,4 @@
+# Each launcher needs its own line endings, whatever system the repository is checked out on.
+*.bat     text eol=crlf
+*.command text eol=lf
+*.sh      text eol=lf
