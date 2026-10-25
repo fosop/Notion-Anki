@@ -77,7 +77,7 @@ def test_scan_reports_counts_before_conversion():
     summaries = {s.path: s for s in scan_pages(inputs)}
     assert summaries["no_toggles.html"].toggles == 0
     nested = summaries["nested.html"]
-    assert (nested.toggles, nested.cards, nested.untitled, nested.max_depth) == (4, 4, 0, 3)
+    assert (nested.toggles, nested.cards, nested.nested, nested.untitled, nested.max_depth) == (4, 2, 2, 0, 3)
     assert nested.kind == "notion-export"
     assert nested.patterns == {"notion-toggle-list": 4}
     assert summaries["empty.html"].untitled == 4
@@ -136,12 +136,13 @@ def test_mostly_utf8_with_a_corrupt_byte():
     assert "αβγ" in decoded.text and "�" in decoded.text
 
 
-def test_very_deep_nesting_does_not_hit_the_recursion_limit():
+@pytest.mark.parametrize("nested_cards", [False, True])
+def test_very_deep_nesting_does_not_hit_the_recursion_limit(nested_cards):
     depth = 150
     inner = ""
     for level in reversed(range(depth)):
         inner = toggle(f"L{level}", f"<p>A{level}</p>{inner}")
-    result = convert_text(notion_page(inner))
-    assert len(result.cards) == depth
+    result = convert_text(notion_page(inner), nested_cards=nested_cards)
+    assert len(result.cards) == (depth if nested_cards else 1)
     assert result.cards[0].back.count("<details open>") == depth - 1
     export_cards(result.cards)

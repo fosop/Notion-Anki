@@ -17,8 +17,12 @@ class NestedToggleMode(str, Enum):
     EXPANDED = "expanded"
     """Default: nested toggles are shown with their full content, in place."""
 
+    COLLAPSED = "collapsed"
+    """Nested toggles are shown closed, as in Notion: click a title to see its content."""
+
     TITLES_ONLY = "titles_only"
-    """Only the titles of directly nested toggles are shown, in place."""
+    """Only the titles of directly nested toggles are shown, in place. Their content is
+    left out, so this needs :attr:`ConversionOptions.nested_cards`."""
 
 
 class OutputFormat(str, Enum):
@@ -129,6 +133,8 @@ class PageSummary:
     toggles: int = 0
     cards: int = 0
     untitled: int = 0
+    nested: int = 0
+    """Titled toggles inside another titled toggle: by default part of their parent's answer."""
     max_depth: int = 0
     patterns: dict[str, int] = field(default_factory=dict)
     kind: str = "unknown"
@@ -148,17 +154,27 @@ class PageResult:
     skipped_untitled: int = 0
     skipped_empty: int = 0
     empty_answers: int = 0
+    nested: int = 0
+    """Nested toggles shown inside their parent's answer instead of as cards of their own."""
     kind: str = "unknown"
     error: str | None = None
 
 
 @dataclass(frozen=True)
 class ConversionOptions:
+    nested_cards: bool = False
+    """Also turn every nested toggle into a card of its own (the behaviour of version 1).
+    By default only the outermost titled toggles become cards, and nested toggles are
+    part of their parent's answer."""
     nested_mode: NestedToggleMode = NestedToggleMode.EXPANDED
     skip_empty_answers: bool = False
     """Drop toggles whose answer is empty instead of exporting them (always reported)."""
     keep_external_images: bool = True
     """Keep ``<img>`` tags that point to web URLs. They are never downloaded by this app."""
+
+    def __post_init__(self) -> None:
+        if self.nested_mode is NestedToggleMode.TITLES_ONLY and not self.nested_cards:
+            raise ValueError("Titles-only answers leave out the nested content, so they need nested_cards=True.")
 
 
 @dataclass
@@ -188,6 +204,10 @@ class ConversionResult:
     @property
     def empty_answers(self) -> int:
         return sum(p.empty_answers for p in self.pages)
+
+    @property
+    def nested_in_answers(self) -> int:
+        return sum(p.nested for p in self.pages)
 
     @property
     def pages_processed(self) -> int:

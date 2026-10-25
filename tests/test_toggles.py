@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from converter import NestedToggleMode
+from converter import ConversionOptions, NestedToggleMode
 from converter.parser import parse_page
 from converter.toggles import (
     PATTERN_HTML_DETAILS,
@@ -52,8 +52,34 @@ def test_multiple_sibling_toggles_keep_document_order():
 
 # 3. Nested toggles at three or more levels --------------------------------------
 
-def test_every_nested_toggle_becomes_its_own_card():
+def test_nested_toggles_are_part_of_their_parent_card_by_default():
     result = convert_fixture("notion_nested.html")
+    assert fronts(result) == ["Toggle A", "Toggle D"]
+    assert all(c.depth == 0 for c in result.cards)
+    back = card(result, "Toggle A").back
+    assert back.count("<details open>") == 2
+    assert "Toggle B" in back and "Explanation C" in back
+    assert result.nested_in_answers == 2
+
+
+def test_nested_toggles_can_be_shown_closed():
+    html = notion_page(toggle("Parent", "<p>Intro</p>" + toggle("Child", "<p>Child answer</p>")))
+    result = convert_text(html, nested_mode=NestedToggleMode.COLLAPSED)
+    assert fronts(result) == ["Parent"]
+    assert card(result, "Parent").back == (
+        '<p>Intro</p><details><summary>Child</summary>'
+        '<div style="padding-left: 1.25em"><p>Child answer</p></div></details>'
+    )
+
+
+def test_titles_only_answers_need_cards_for_the_nested_toggles():
+    # Otherwise the nested toggles' content would appear nowhere.
+    with pytest.raises(ValueError):
+        ConversionOptions(nested_mode=NestedToggleMode.TITLES_ONLY)
+
+
+def test_every_nested_toggle_can_also_become_its_own_card():
+    result = convert_fixture("notion_nested.html", nested_cards=True)
     assert fronts(result) == ["Toggle A", "Toggle B", "Toggle C", "Toggle D"]
     assert [c.depth for c in result.cards] == [0, 1, 2, 0]
     assert card(result, "Toggle C").breadcrumbs == ("Toggle A", "Toggle B")
@@ -67,7 +93,7 @@ def test_nesting_depth_is_not_limited(depth):
     inner = ""
     for level in reversed(range(depth)):
         inner = toggle(f"Level {level}", f"<p>Answer {level}</p>{inner}")
-    result = convert_text(notion_page(inner))
+    result = convert_text(notion_page(inner), nested_cards=True)
     assert fronts(result) == [f"Level {i}" for i in range(depth)]
     assert [c.depth for c in result.cards] == list(range(depth))
     assert result.cards[-1].back == f"<p>Answer {depth - 1}</p>"
@@ -79,7 +105,7 @@ def test_nesting_depth_is_not_limited(depth):
 # 4. Parent answers contain their expanded descendants ---------------------------
 
 def test_parent_answer_expands_descendants_in_document_order():
-    result = convert_fixture("notion_nested.html")
+    result = convert_fixture("notion_nested.html", nested_cards=True)
     back = card(result, "Toggle A").back
     expected_order = [
         "Paragraph 1", "Paragraph 2", "Toggle B", "Explanation B", "Toggle C",
@@ -108,7 +134,7 @@ def test_expanded_nested_toggle_markup():
 # 5. The alternative parent-answer setting ---------------------------------------
 
 def test_titles_only_mode_shows_only_direct_child_titles():
-    result = convert_fixture("notion_nested.html", nested_mode=NestedToggleMode.TITLES_ONLY)
+    result = convert_fixture("notion_nested.html", nested_cards=True, nested_mode=NestedToggleMode.TITLES_ONLY)
     assert fronts(result) == ["Toggle A", "Toggle B", "Toggle C", "Toggle D"]
     back_a = card(result, "Toggle A").back
     assert "Toggle B" in back_a
@@ -124,7 +150,7 @@ def test_titles_only_mode_shows_only_direct_child_titles():
 # 6. Nested toggles inside list structures ----------------------------------------
 
 def test_toggles_inside_lists_keep_their_hierarchy():
-    result = convert_fixture("notion_lists.html")
+    result = convert_fixture("notion_lists.html", nested_cards=True)
     assert fronts(result) == [
         "Causes of chest pain",
         "Acute coronary syndrome",
@@ -227,7 +253,7 @@ def test_parent_links_use_identity_not_equality():
 
 
 def test_toggle_heading_becomes_a_card_with_its_indented_content():
-    result = convert_fixture("notion_rich.html")
+    result = convert_fixture("notion_rich.html", nested_cards=True)
     heading = card(result, "Toggle heading question")
     assert heading.back.startswith("<p>Toggle heading answer</p><details open><summary>Toggle inside a toggle heading</summary>")
     assert "padding-left: 1.5em" not in heading.back  # the wrapper div.indented is unwrapped
@@ -239,13 +265,13 @@ def test_nested_toggle_heading_keeps_heading_style_in_parent():
         '<details open=""><summary style="font-weight:600;font-size:1.5em;line-height:1.3;margin:0">Sub-heading</summary>'
         '<div class="indented"><p>Text</p></div></details>'
     )
-    result = convert_text(notion_page(toggle("Outer", heading)))
+    result = convert_text(notion_page(toggle("Outer", heading)), nested_cards=True)
     assert '<summary style="font-weight: 600; font-size: 1.5em">Sub-heading</summary>' in card(result, "Outer").back
     assert card(result, "Sub-heading").back == "<p>Text</p>"
 
 
 def test_new_notion_export_format_with_display_contents_wrappers():
-    result = convert_fixture("notion_new_export.html")
+    result = convert_fixture("notion_new_export.html", nested_cards=True)
     assert fronts(result) == ["Which drug reverses heparin?", "Anatomy terms in Japanese", "心臓", "肺 (hai)"]
     assert card(result, "Which drug reverses heparin?").back == "<p>Protamine sulfate</p>"
     assert card(result, "心臓").front == "<strong>心臓</strong>"
@@ -255,7 +281,7 @@ def test_new_notion_export_format_with_display_contents_wrappers():
 
 
 def test_generic_html_details_and_whitespace():
-    result = convert_fixture("generic_details.html")
+    result = convert_fixture("generic_details.html", nested_cards=True)
     assert fronts(result) == [
         "What is the normal GFR?",
         "Which hormone acts on the collecting duct?",

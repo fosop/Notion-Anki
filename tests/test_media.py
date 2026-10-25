@@ -34,7 +34,8 @@ def load_export(name: str = "notion_export.zip"):
 
 @pytest.fixture(scope="module")
 def export_result():
-    return convert(load_export())
+    # Every toggle a card of its own, so each image can be checked on the card it belongs to.
+    return convert(load_export(), options=ConversionOptions(nested_cards=True))
 
 
 def _sources(html: str) -> list[str]:
@@ -138,9 +139,20 @@ def test_parent_card_includes_media_of_expanded_children(export_result):
 
 def test_titles_only_parent_does_not_reference_child_media():
     result = convert(load_export())
-    titles_only = convert(load_export(), options=ConversionOptions(nested_mode=NestedToggleMode.TITLES_ONLY))
+    titles_only = convert(
+        load_export(), options=ConversionOptions(nested_cards=True, nested_mode=NestedToggleMode.TITLES_ONLY)
+    )
     assert len(card(result, "Atrial fibrillation on ECG").media) == 2
     assert len(card(titles_only, "Atrial fibrillation on ECG").media) == 1
+
+
+def test_by_default_a_nested_toggles_image_travels_with_its_parent_card(export_result):
+    result = convert(load_export())
+    assert "Another image named Untitled" not in fronts(result)
+    assert result.nested_in_answers == 1
+    child = card(export_result, "Another image named Untitled")
+    assert set(child.media) < set(card(result, "Atrial fibrillation on ECG").media)
+    assert sorted(result.media) == sorted(export_result.media)
 
 
 def test_nested_part_zips_are_merged():

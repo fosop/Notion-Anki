@@ -30,7 +30,7 @@ from .models import (
 )
 from .parser import KIND_GENERIC, KIND_NOTION_APP, ParsedPage, parse_page, title_from_path
 from .rendering import CardRenderer
-from .toggles import pattern_counts
+from .toggles import Toggle, pattern_counts
 
 logger = logging.getLogger(__name__)
 
@@ -72,15 +72,18 @@ def scan_pages(inputs: InputSet, progress: ProgressCallback | None = None) -> li
             try:
                 page, note, encoding = _load_page(inputs, entry.path)
                 renderer = CardRenderer(page, None)
-                usable = sum(1 for toggle in page.toggles if renderer.title_is_usable(toggle))
+                titled = {id(toggle) for toggle in page.toggles if renderer.title_is_usable(toggle)}
+                inside = {id(toggle) for toggle in page.toggles if _inside_titled(toggle, titled)}
             except (LoaderError, RecursionError, ValueError) as exc:
                 summary.error = _describe(exc)
                 logger.warning("Scan failed for a page: %s", type(exc).__name__)
             else:
+                # Counts for the default setting: nested toggles are part of their parent's answer.
                 summary.title = page.title
                 summary.toggles = len(page.toggles)
-                summary.cards = usable
-                summary.untitled = len(page.toggles) - usable
+                summary.cards = len(titled - inside)
+                summary.nested = len(titled & inside)
+                summary.untitled = len(page.toggles) - len(titled) - len(inside - titled)
                 summary.max_depth = max((t.depth + 1 for t in page.toggles), default=0)
                 summary.patterns = pattern_counts(page.toggles)
                 summary.kind = page.kind
@@ -101,8 +104,10 @@ def convert(
 ) -> ConversionResult:
     """Convert the *selected* pages (default: all pages) to cards.
 
-    Every toggle with a usable title becomes exactly one card, in document
-    order. Pages are processed in the order of :attr:`InputSet.pages`.
+    Every outermost toggle with a usable title becomes one card, in document
+    order, and the toggles nested inside it are part of its answer. With
+    ``options.nested_cards``, every titled toggle becomes a card of its own.
+    Pages are processed in the order of :attr:`InputSet.pages`.
     """
     options = options or ConversionOptions()
     paths = [entry.path for entry in inputs.pages]
@@ -166,8 +171,12 @@ def _convert_page(
     issues: list[Issue],
 ) -> None:
     titles: dict[int, str] = {}
+    titled: set[int] = set()
     untitled_context: list[str] = []
-    for toggle in page.toggles:
+    for toggle in page.toggles:  # document order: parents come before their children
+        if not options.nested_cards and _inside_titled(toggle, titled):
+            result.nested += 1  # part of its parent's answer
+            continue
         rendered = renderer.render(toggle)
         titles[id(toggle)] = rendered.front_text
         breadcrumbs = tuple(t for t in (titles.get(id(a), "") for a in toggle.ancestors()) if t)
@@ -175,6 +184,7 @@ def _convert_page(
             result.skipped_untitled += 1
             untitled_context.append(f"inside '{_short(breadcrumbs[-1])}'" if breadcrumbs else "at the top level")
             continue
+        titled.add(id(toggle))
         if rendered.back_empty:
             result.empty_answers += 1
             if options.skip_empty_answers:
@@ -217,6 +227,11 @@ def _convert_page(
             Severity.WARNING,
             page=page.title,
         ))
+
+
+def _inside_titled(toggle: Toggle, titled: set[int]) -> bool:
+    """True if an enclosing toggle has a title, which makes this toggle part of that card's answer."""
+    return any(id(ancestor) in titled for ancestor in toggle.ancestors())
 
 
 def _aggregate(card_notes: list[tuple[int, str, str, str]]) -> list[Issue]:

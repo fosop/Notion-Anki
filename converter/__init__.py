@@ -1,7 +1,8 @@
 """Local-first conversion of Notion HTML exports into Anki flashcards.
 
-Every Notion toggle, including toggles nested inside other toggles at any
-depth, becomes one card: the toggle title is the front and its content is the back.
+Every Notion toggle becomes one card: the toggle title is the front and its
+content, including the toggles nested inside it at any depth, is the back.
+Optionally, nested toggles also become cards of their own.
 
 This package has no dependency on Streamlit, so the same engine can serve the
 web UI (``app.py``), the command line (``python -m converter``), tests, or a
@@ -27,7 +28,7 @@ from .models import (
 )
 from .pipeline import convert, convert_html, scan_pages
 
-__version__ = "0.1.0"
+__version__ = "2.0.0"
 
 __all__ = [
     "TEXT_FORMATS",

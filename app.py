@@ -64,9 +64,12 @@ FORMAT_LABELS = {
     OutputFormat.TSV: "TSV: tab-separated text",
     OutputFormat.CSV: "CSV: comma-separated text",
 }
+# (nested toggles become cards of their own, how they appear in their parent's answer)
 NESTED_LABELS = {
-    NestedToggleMode.EXPANDED: "Fully expanded (title and complete answer)",
-    NestedToggleMode.TITLES_ONLY: "Titles only",
+    (False, NestedToggleMode.EXPANDED): "Inside the main toggle's answer, open",
+    (False, NestedToggleMode.COLLAPSED): "Inside the main toggle's answer, closed: click to open them, as in Notion",
+    (True, NestedToggleMode.EXPANDED): "Also as cards of their own (the answer above them still shows them open)",
+    (True, NestedToggleMode.TITLES_ONLY): "Also as cards of their own (the answer above them shows only their titles)",
 }
 
 
@@ -77,7 +80,7 @@ def main() -> None:
 
     st.title("Notion → Anki")
     st.caption(
-        "Every Notion toggle, including toggles nested inside other toggles, becomes a flashcard. "
+        "Every Notion toggle becomes a flashcard, with the toggles nested inside it as part of its answer. "
         "Everything runs on this computer and nothing is uploaded to the internet."
     )
 
@@ -132,11 +135,11 @@ def main() -> None:
                 "text only: their images must be copied into Anki's media folder by hand."
             ),
         )
-        nested_mode = st.radio(
-            "Nested toggles inside a parent's answer",
+        nested_cards, nested_mode = st.radio(
+            "Toggles inside other toggles",
             list(NESTED_LABELS),
             format_func=NESTED_LABELS.get,
-            help="Either way, every nested toggle also becomes its own card.",
+            help="Every outermost toggle becomes a card. This decides what happens to the toggles nested inside it.",
         )
     with right:
         titles = _naming_titles(selected, summaries)
@@ -167,7 +170,12 @@ def main() -> None:
 
     # 4. Convert ---------------------------------------------------------------
     st.header("4. Convert", divider="gray")
-    options = ConversionOptions(nested_mode=nested_mode, skip_empty_answers=skip_empty, keep_external_images=keep_external)
+    options = ConversionOptions(
+        nested_cards=nested_cards,
+        nested_mode=nested_mode,
+        skip_empty_answers=skip_empty,
+        keep_external_images=keep_external,
+    )
     conversion_key = (st.session_state.upload_signature, tuple(selected), options)
     if not selected:
         st.warning("Select at least one page to convert.")
@@ -237,14 +245,15 @@ def _load(files):
 def _page_selector(summaries: list[PageSummary]) -> list[str]:
     total_toggles = sum(s.toggles for s in summaries)
     total_cards = sum(s.cards for s in summaries)
+    total_nested = sum(s.nested for s in summaries)
     if len(summaries) == 1:
         only = summaries[0]
-        st.write(f"**{only.title}**: {only.toggles} toggle(s) detected, {only.cards} card(s) will be created.")
+        st.write(f"**{only.title}**: {only.toggles} toggle(s) detected → {_cards_phrase(only.cards, only.nested)}.")
         return [only.path]
 
     st.write(
-        f"Found **{total_toggles}** toggle(s) in **{len(summaries)}** pages; "
-        f"**{total_cards}** card(s) would be created. Tick the pages to convert. All ticked pages go into one file."
+        f"Found **{total_toggles}** toggle(s) in **{len(summaries)}** pages → {_cards_phrase(total_cards, total_nested)}. "
+        "Tick the pages to convert. All ticked pages go into one file."
     )
     state = st.session_state
     first, second, third, _rest = st.columns([1, 1, 1, 3])
@@ -262,6 +271,7 @@ def _page_selector(summaries: list[PageSummary]) -> list[str]:
         "Folder": [_pretty_folder(s.path) for s in summaries],
         "Toggles": [s.toggles for s in summaries],
         "Cards": [s.cards for s in summaries],
+        "Nested": [s.nested for s in summaries],
         "Untitled": [s.untitled for s in summaries],
         "Depth": [s.max_depth for s in summaries],
         "Notes": [s.error or " ".join(s.notes) for s in summaries],
@@ -273,6 +283,7 @@ def _page_selector(summaries: list[PageSummary]) -> list[str]:
         disabled=[column for column in table.columns if column != "Convert"],
         column_config={
             "Convert": st.column_config.CheckboxColumn("Convert", help="Include this page in the export"),
+            "Nested": st.column_config.NumberColumn("Nested", help="Toggles inside another toggle: part of its card's answer"),
             "Untitled": st.column_config.NumberColumn("Untitled", help="Toggles without a title (skipped)"),
             "Depth": st.column_config.NumberColumn("Depth", help="Deepest level of nested toggles"),
         },
@@ -284,8 +295,9 @@ def _page_selector(summaries: list[PageSummary]) -> list[str]:
 def _diagnostics(summaries: list[PageSummary], other_files: dict[str, int]) -> None:
     with st.expander("Detection details (debug view)"):
         st.write(
-            f"{sum(s.toggles for s in summaries)} toggle(s) detected → {sum(s.cards for s in summaries)} card(s) "
-            f"would be generated; {sum(s.untitled for s in summaries)} untitled toggle(s) would be skipped."
+            f"{sum(s.toggles for s in summaries)} toggle(s) detected → "
+            f"{_cards_phrase(sum(s.cards for s in summaries), sum(s.nested for s in summaries))} "
+            f"with the default settings; {sum(s.untitled for s in summaries)} untitled toggle(s) would be skipped."
         )
         rows = [
             {
@@ -320,6 +332,10 @@ def _no_toggles_message(summaries: list[PageSummary]) -> str:
     elif kinds == {"generic-html"}:
         message += " These files don't look like Notion HTML exports."
     return message
+
+
+def _cards_phrase(cards: int, nested: int) -> str:
+    return f"{cards} card(s)" + (f", with {nested} nested toggle(s) inside their answers" if nested else "")
 
 
 def _pretty_folder(path: str) -> str:
@@ -376,7 +392,8 @@ def _summary(result: ConversionResult, fmt: OutputFormat) -> bool:
     errors = [i for i in issues if i.severity is Severity.ERROR]
     warnings = [i for i in issues if i.severity is Severity.WARNING]
     notices = [i for i in issues if i.severity is Severity.INFO]
-    st.success(f"Conversion finished: {len(result.cards)} card(s) from {result.pages_processed} page(s).")
+    nested = f", with {result.nested_in_answers} nested toggle(s) inside their answers" if result.nested_in_answers else ""
+    st.success(f"Conversion finished: {len(result.cards)} card(s) from {result.pages_processed} page(s){nested}.")
     columns = st.columns(5)
     columns[0].metric("Cards", len(result.cards))
     columns[1].metric("Pages processed", result.pages_processed)
@@ -592,7 +609,8 @@ def _sidebar() -> None:
         st.subheader("How it works")
         st.markdown(
             "- Each **toggle** becomes one card: its title is the front and its content is the back.\n"
-            "- **Nested toggles** become cards too, at any depth.\n"
+            "- **Nested toggles** are part of their parent's answer, open or closed (or cards of their own, "
+            "if you choose so in Settings).\n"
             "- Text outside toggles is ignored.\n"
             "- Formatting, lists, tables, colours, equations and images are kept."
         )

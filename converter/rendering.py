@@ -20,7 +20,8 @@ What is preserved, and how:
 * equations: KaTeX's TeX source becomes MathJax ``\\(…\\)`` / ``\\[…\\]``,
   which Anki renders natively;
 * images become flat media filenames, and local audio becomes ``[sound:…]`` tags;
-* nested toggles become ``<details open>`` blocks, or only their titles.
+* nested toggles become ``<details open>`` blocks, closed ``<details>`` blocks
+  (click to open, as in Notion), or only their titles.
 
 Anything that cannot be kept (videos, attachments, embeds, missing files) is
 reported as a note on the card instead of disappearing silently.
@@ -526,7 +527,8 @@ class CardRenderer:
         children: list[Node] = [El("summary", summary_attrs, title)]
         if body:
             children.append(El("div", {"style": NESTED_BODY_STYLE}, body))
-        return [El("details", {"open": None}, children)]
+        collapsed = self.options.nested_mode is NestedToggleMode.COLLAPSED
+        return [El("details", {} if collapsed else {"open": None}, children)]
 
     def _callout(self, node: Tag, classes: list[str], ctx: _Ctx) -> list[Node]:
         icon: list[Node] = []

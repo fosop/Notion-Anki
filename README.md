@@ -2,11 +2,41 @@
 
 Convert Notion **HTML exports** into Anki flashcards: an **Anki package (.apkg)** that carries the
 cards together with their images and audio, or a TSV/CSV text file.
-**Every toggle becomes a card, including toggles nested inside other toggles, at any depth.**
-The toggle's title is the front and its content is the back.
+**Every toggle becomes a card, and the toggles nested inside it are part of its answer**, open or
+closed (click to open, as in Notion). The toggle's title is the front and its content is the back.
+If you prefer, nested toggles can also become cards of their own.
 
 Everything runs on your own computer. There is no account, no Notion API token and
 no cloud service, and the app needs no internet connection once it is installed.
+
+## Quick start (Windows)
+
+1. Install Python from [python.org/downloads](https://www.python.org/downloads/) (the default options are fine).
+2. On this page, click the green **Code** button → **Download ZIP**.
+3. Right-click the downloaded ZIP → **Extract All…** → **Extract**.
+4. Open the extracted folder and double-click **start.bat**. If Windows says "Windows protected
+   your PC", click **More info → Run anyway**. The first start installs what the app needs (a few
+   minutes); if the window asks a question, type `y` and press Enter.
+5. The app opens in your browser. Keep the black window open while you use it; close it when you're done.
+
+Next time, just double-click **start.bat** again.
+
+## Quick start (Mac)
+
+Your Mac needs macOS 12 (Monterey) or newer: check under Apple menu → **About This Mac**.
+
+1. Install Python from [python.org/downloads](https://www.python.org/downloads/): open the downloaded
+   `.pkg` file and click through the installer.
+2. On this page, click the green **Code** button → **Download ZIP**. Safari unzips it into a
+   **Notion-Anki-main** folder in Downloads (with another browser, double-click the ZIP to unzip it).
+3. Open **Terminal** (press ⌘ Space, type `Terminal`, press Return). Type `sh` and a space, drag
+   **start.command** from the Notion-Anki-main folder into the Terminal window, and press Return.
+   If your Mac asks whether Terminal may access your Downloads folder, click **Allow**. The first
+   start installs what the app needs (a few minutes).
+4. The app opens in your browser. Keep Terminal open while you use it; press **Control-C** in
+   Terminal (or close the window) when you're done.
+
+Next time, open Terminal, press **↑** to bring back the last command, and press Return.
 
 ---
 
@@ -74,6 +104,8 @@ Alternatives:
    included, and turn on **Include subpages** if you want them.
 4. Save the `.zip`. **Don't unzip it**: the app reads the ZIP directly. This includes the
    "ZIP inside a ZIP" (`ExportBlock-…-Part-1.zip`) that Notion produces for large exports.
+   On a Mac, Safari unzips downloads automatically. If you get a folder instead of a ZIP,
+   right-click the folder → **Compress** and use the new ZIP.
 
 ## 3. Use the app
 
@@ -85,7 +117,8 @@ Alternatives:
    * Output format: **Anki package (.apkg)** (default: cards, images and audio in one file), TSV or CSV.
    * Deck name (.apkg only; leave empty to use the page title). `::` makes a sub-deck,
      e.g. `Neurology::Lecture 2.3`.
-   * Nested toggles in a parent's answer: **fully expanded** (default) or **titles only**.
+   * Toggles inside other toggles: part of the main toggle's answer, **open** (default) or
+     **closed** (click to open, as in Notion), or also as cards of their own.
    * File name (leave empty to use the suggested name).
    * **Media bundle** (TSV/CSV only): also produce a ZIP with the images and audio.
    * *Advanced:* skip toggles with empty answers; keep or drop images linked from the web.
@@ -145,21 +178,25 @@ Anki reads them as settings, never as cards; older versions treat them as commen
 ## 5. How toggles become cards
 
 ```
-Toggle A                      →  Card 1  front: Toggle A
-  Paragraph 1                            back:  Paragraph 1, Paragraph 2,
-  Paragraph 2                                   ▾ Toggle B (expanded)
-  Toggle B                                        Explanation B
-    Explanation B                                 ▾ Toggle C (expanded)
-    Toggle C                                        Explanation C
-      Explanation C           →  Card 2  front: Toggle B   back: Explanation B + expanded Toggle C
-                              →  Card 3  front: Toggle C   back: Explanation C
+Toggle A                      →  one card   front: Toggle A
+  Paragraph 1                               back:  Paragraph 1, Paragraph 2,
+  Paragraph 2                                      ▾ Toggle B
+  Toggle B                                           Explanation B
+    Explanation B                                    ▾ Toggle C
+    Toggle C                                           Explanation C
+      Explanation C
 ```
 
-* Each toggle produces exactly one card, in document order, at any nesting depth.
-* A child card's front is only its own title; parent titles are never prepended.
-* In **titles only** mode the parent's back shows `▸ Toggle B` in place instead of B's content.
+* Each outermost toggle becomes one card, in document order. The toggles nested inside it, at any
+  depth, are part of its answer, so a sub-question such as "What is the main cause?" always appears
+  next to the toggle it belongs to.
+* Nested toggles are shown **open** (default) or **closed**: then you click a title during review to
+  open it, as in Notion.
+* Optionally, nested toggles also become **cards of their own** (the behaviour of version 1). A
+  child card's front is then only its own title. The parent's answer shows the nested toggles open,
+  or only their titles (`▸ Toggle B`).
 * Text outside toggles (page titles, headings, paragraphs) never becomes a card.
-* Toggles without a usable title are skipped and counted; their nested toggles still become cards.
+* Toggles without a usable title are skipped and counted; the toggles nested inside them still become cards.
 * Toggles with an empty answer are exported but flagged. You can skip them under *Advanced*.
 * Duplicate titles are kept, because two toggles may legitimately ask the same question (see the
   re-import note in §4).
@@ -185,7 +222,7 @@ Recognised markup (see `converter/toggles.py`), checked against real Notion expo
 | Links | web/mailto links kept; links to other Notion pages become plain text |
 | Images (local) | flat, unique media files: `<img src="name_hash.png">` |
 | Audio (local) | `[sound:name_hash.mp3]` |
-| Nested toggles | `<details open>` blocks, or titles only |
+| Nested toggles | open `<details open>` or closed `<details>` blocks (or only titles, for separate cards) |
 | Greek letters, arrows, units, sub/superscripts, emoji | unchanged UTF-8 |
 
 Anything that cannot be kept is listed as a warning and marked in the card, e.g.
@@ -252,7 +289,8 @@ python -m converter Export.zip --list                     # pages and toggle cou
 python -m converter Export.zip                            # <page title>.apkg, images included
 python -m converter Export.zip -o cards.apkg --deck "Neurology::Lecture 2.3"
 python -m converter Export.zip -o cards.tsv --bundle      # cards.tsv + cards.zip (media)
-python -m converter page.html --format csv --titles-only -o cards.csv
+python -m converter Export.zip --collapsed                # nested toggles closed in the answer
+python -m converter page.html --format csv --nested-cards --titles-only -o cards.csv
 ```
 
 The format comes from `--format`, otherwise from the extension of `-o`, otherwise it is `.apkg`.

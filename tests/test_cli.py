@@ -7,6 +7,8 @@ import json
 import sqlite3
 import zipfile
 
+import pytest
+
 from converter.__main__ import main
 from helpers import FIXTURES
 
@@ -37,6 +39,22 @@ def test_explicit_format_and_deck(tmp_path):
     db.deserialize(zipfile.ZipFile(io.BytesIO((tmp_path / "deck.apkg").read_bytes())).read("collection.anki2"))
     decks = {d["name"] for d in json.loads(db.execute("SELECT decks FROM col").fetchone()[0]).values()}
     assert "Neuro::Lecture 2.3" in decks
+
+
+def test_nested_toggles_become_cards_only_on_request(tmp_path):
+    def rows(*options: str) -> int:
+        assert main([NESTED, "-o", str(tmp_path / "cards.tsv"), *options]) == 0
+        return len((tmp_path / "cards.tsv").read_text(encoding="utf-8").splitlines()) - 3  # minus the headers
+
+    assert rows() == 2
+    assert rows("--collapsed") == 2
+    assert rows("--nested-cards") == rows("--nested-cards", "--titles-only") == 4
+
+
+def test_titles_only_without_nested_cards_is_refused(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        main([NESTED, "--titles-only", "-o", str(tmp_path / "x.tsv")])
+    assert "--nested-cards" in capsys.readouterr().err
 
 
 def test_duplicate_front_warning_only_concerns_text_formats(tmp_path, capsys):

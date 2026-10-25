@@ -36,13 +36,23 @@ def main(argv: list[str] | None = None) -> int:
         help="apkg (cards and media in one file), tsv or csv; default: the extension of -o, otherwise apkg",
     )
     parser.add_argument("--deck", help="deck name for .apkg files (default: the page title); use :: for sub-decks")
-    parser.add_argument("--titles-only", action="store_true", help="show only nested toggle titles in parent answers")
+    parser.add_argument(
+        "--nested-cards", action="store_true", help="also make a card of its own from every nested toggle (version 1 behaviour)"
+    )
+    parser.add_argument("--collapsed", action="store_true", help="show nested toggles closed in the answer (click to open)")
+    parser.add_argument(
+        "--titles-only", action="store_true", help="with --nested-cards: show only nested toggle titles in parent answers"
+    )
     parser.add_argument("--skip-empty", action="store_true", help="skip toggles whose answer is empty")
     parser.add_argument("--no-external-images", action="store_true", help="replace web images with links")
     parser.add_argument("--bundle", action="store_true", help="TSV/CSV only: also write a ZIP with the cards, media and a README")
     parser.add_argument("--page", action="append", default=None, help="convert only this page path (repeatable)")
     parser.add_argument("--list", action="store_true", help="list pages and toggle counts, then exit")
     args = parser.parse_args(argv)
+    if args.titles_only and not args.nested_cards:
+        parser.error("--titles-only needs --nested-cards; otherwise the nested toggles' content would be lost")
+    if args.titles_only and args.collapsed:
+        parser.error("--titles-only and --collapsed cannot be combined")
 
     inputs = load_paths(args.inputs)
     for issue in inputs.issues:
@@ -50,12 +60,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.list:
         for summary in scan_pages(inputs):
-            status = summary.error or f"{summary.toggles} toggle(s), {summary.cards} card(s), depth {summary.max_depth}"
+            status = summary.error or (
+                f"{summary.toggles} toggle(s), {summary.cards} card(s), {summary.nested} nested, depth {summary.max_depth}"
+            )
             print(f"{summary.path}\t{status}")
         return 0
 
+    if args.titles_only:
+        nested_mode = NestedToggleMode.TITLES_ONLY
+    else:
+        nested_mode = NestedToggleMode.COLLAPSED if args.collapsed else NestedToggleMode.EXPANDED
     options = ConversionOptions(
-        nested_mode=NestedToggleMode.TITLES_ONLY if args.titles_only else NestedToggleMode.EXPANDED,
+        nested_cards=args.nested_cards,
+        nested_mode=nested_mode,
         skip_empty_answers=args.skip_empty,
         keep_external_images=not args.no_external_images,
     )

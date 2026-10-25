@@ -6,7 +6,9 @@ setlocal
 cd /d "%~dp0"
 set "VENV_PYTHON=.venv\Scripts\python.exe"
 
+if not exist "run.py" goto not_unzipped
 if exist "%VENV_PYTHON%" goto packages
+echo Looking for Python...
 call :find_python
 if not defined PYTHON goto no_python
 echo Setting up for the first start. This takes a few minutes...
@@ -31,15 +33,27 @@ echo.
 goto end
 
 :find_python
+rem Python's output stays visible: on its first run, the Python install manager
+rem may download Python or ask a question, which must not happen invisibly.
 set "PYTHON="
-py -3 -c "import sys; sys.exit(sys.version_info < (3, 11))" >nul 2>&1
-if not errorlevel 1 (
-    set "PYTHON=py -3"
-    goto :eof
-)
-python -c "import sys; sys.exit(sys.version_info < (3, 11))" >nul 2>&1
+where py >nul 2>&1
+if errorlevel 1 goto find_python_on_path
+py -3 -c "import sys; sys.exit(sys.version_info < (3, 11))"
+if not errorlevel 1 set "PYTHON=py -3"
+if defined PYTHON goto :eof
+:find_python_on_path
+where python >nul 2>&1
+if errorlevel 1 goto :eof
+python -c "import sys; sys.exit(sys.version_info < (3, 11))"
 if not errorlevel 1 set "PYTHON=python"
 goto :eof
+
+:not_unzipped
+echo.
+echo start.bat has to be run from the unzipped folder.
+echo Right-click the downloaded ZIP file, choose "Extract All", then open the
+echo extracted folder and double-click start.bat there.
+goto end
 
 :no_python
 echo.

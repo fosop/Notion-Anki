@@ -51,7 +51,7 @@ def test_anki_imports_every_card_unchanged_with_media(tmp_path, fmt):
     output = export_cards(result.cards, fmt)
     bundle = build_media_bundle(output.filename, output.data, result.media)
     log, fields, media_check = _import(tmp_path, output.data, fmt, bundle)
-    assert len(log.new) == len(result.cards) == 6
+    assert len(log.new) == len(result.cards) == 5  # the sixth toggle is nested inside another card
     assert fields == sorted((c.front, c.back) for c in result.cards)
     assert media_check == ([], [])
 
@@ -83,9 +83,9 @@ def test_anki_imports_the_package_with_its_media(tmp_path):
     col = anki_collection.Collection(str(tmp_path / "collection.anki2"))
     try:
         log = _import_package(col, tmp_path / "cards.apkg", export_apkg(result.cards, result.media, "Cardiology::Export").data)
-        assert len(log.new) == len(result.cards) == 6
+        assert len(log.new) == len(result.cards) == 5
         assert _fields(col) == sorted((c.front, c.back) for c in result.cards)
-        assert len(col.find_cards('deck:"Cardiology::Export"')) == 6
+        assert len(col.find_cards('deck:"Cardiology::Export"')) == 5
         assert col.models.by_name(NOTETYPE_NAME) is not None
         check = col.media.check()
         assert (list(check.missing), list(check.unused)) == ([], [])

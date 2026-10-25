@@ -56,9 +56,10 @@ def test_full_workflow_with_a_notion_zip():
 
     button(app, "Convert").click().run()
     assert not app.exception
-    assert any("Conversion finished: 6 card(s) from 3 page(s)" in s.value for s in app.success)
+    # One of the 6 toggles is nested: it is part of its parent's answer, images included.
+    assert any("Conversion finished: 5 card(s) from 3 page(s), with 1 nested toggle(s)" in s.value for s in app.success)
     metrics = {m.label: m.value for m in app.metric}
-    assert metrics["Cards"] == "6"
+    assert metrics["Cards"] == "5"
     assert metrics["Pages processed"] == "3"
     assert metrics["Media files"] == "6"
     assert any("warning" in w.value for w in app.warning)  # the missing image is reported
@@ -87,7 +88,7 @@ def test_full_workflow_with_a_notion_zip():
     state = app.session_state
     output = state["export"]
     _headers, rows = parse_export(output.text, OutputFormat.TSV)
-    assert len(rows) == 6 and all(len(r) == 2 for r in rows)
+    assert len(rows) == 5 and all(len(r) == 2 for r in rows)
     bundle = zipfile.ZipFile(io.BytesIO(state["bundle"]))
     assert sum(1 for n in bundle.namelist() if n.startswith("media/")) == 6
 
@@ -118,11 +119,16 @@ def test_changing_settings_requires_reconversion_and_csv_export():
     app = start()
     app.file_uploader[0].upload("notion_nested.html", (FIXTURES / "notion_nested.html").read_bytes(), "text/html").run()
     button(app, "Convert").click().run()
-    assert any("4 card(s)" in s.value for s in app.success)
+    assert any("2 card(s)" in s.value for s in app.success)
 
-    app.radio[1].set_value(NestedToggleMode.TITLES_ONLY).run()
+    app.radio[1].set_value((False, NestedToggleMode.COLLAPSED)).run()
     assert any("Click **Convert** to update" in i.value for i in app.info)
     button(app, "Convert").click().run()
+    assert "<details><summary>Toggle B</summary>" in app.session_state["result"].cards[0].back
+
+    app.radio[1].set_value((True, NestedToggleMode.TITLES_ONLY)).run()
+    button(app, "Convert").click().run()
+    assert any("4 card(s)" in s.value for s in app.success)
     app.radio[0].set_value(OutputFormat.CSV).run()
     output = app.session_state["export"]
     assert output.filename == "Nested Toggles.csv"
