@@ -1,0 +1,21 @@
+# Local-only, privacy-preserving settings. Streamlit reads this file when the
+# app is started from this folder (`python run.py` or `streamlit run app.py`).
+
+[server]
+# Bind to the loopback interface only: the app is not reachable from the network.
+address = "127.0.0.1"
+port = 8501
+# Don't open a browser or ask for an e-mail address on first start; run.py opens the browser itself.
+headless = true
+# Megabytes. Notion exports with many images can be large.
+maxUploadSize = 1024
+enableXsrfProtection = true
+enableCORS = true
+
+[browser]
+# No usage statistics or telemetry are sent anywhere.
+gatherUsageStats = false
+serverAddress = "127.0.0.1"
+
+[client]
+toolbarMode = "minimal"
